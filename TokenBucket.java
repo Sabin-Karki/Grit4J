@@ -1,6 +1,3 @@
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.StampedLock;
 
@@ -9,7 +6,6 @@ public class TokenBucket {
     private final AtomicLong tokens;
     private final long refillRateInMillis;
     private final long refillAmount;
-    private final ScheduledExecutorService scheduler;
     private final RefillStrategy refillStrategy;
     private final StampedLock stampedLock;
     private final AtomicLong nextRefillTime;
@@ -21,28 +17,32 @@ public class TokenBucket {
         this.refillStrategy = refillStrategy;
         this.tokens = new AtomicLong(capacity);
         this.stampedLock=new StampedLock();
-        this.nextRefillTime=new AtomicLong(System.currentTimeMillis() + refillRateInMillis); 
-
-        this.scheduler=Executors.newSingleThreadScheduledExecutor(runnable->{
-            Thread t = new Thread(runnable);
-            t.setDaemon(true);
-            return t;
-        });
-        /*calling the refill() every refillrateinmillis starting from first interval */        
-        scheduler.scheduleAtFixedRate(
-            this::refill,
-            refillRateInMillis,
-            refillRateInMillis,
-            TimeUnit.MILLISECONDS
-        ); 
+        this.nextRefillTime=new AtomicLong(System.currentTimeMillis() + millisPerToken()); 
     }
+
+    private Long millisPerToken() {
+        return Math.max(1L,refillRateInMillis/refillAmount);
+    }
+
     /* the rule is 2 token per second*/
-    private  void refill() {
+    private  void refillIfNeeded(long now) {
+
+        long scheduled = nextRefillTime.get();
+        if(now<scheduled) return;
+
         long stamp = stampedLock.writeLock();
         try{
-            long tokensToAdd = (refillStrategy == RefillStrategy.INTERVAL) ? refillAmount : capacity;    
-            tokens.set(Math.min(capacity,tokens.get()+tokensToAdd)); // the why is ,firstly the capacity=10 always cause its the limit,now the tokens lets assume it has 6 tokens and tokens to add is 2 so the parameter will be 8,and because of the  Math.min, the newTokenCount= will always be the newTokenCount=8 and never be more than capacity,and will be 10 at most
-            nextRefillTime.set(System.currentTimeMillis() + refillRateInMillis); 
+            now = System.currentTimeMillis();
+            scheduled = nextRefillTime.get();
+            if(now<scheduled) return;
+
+            long tokensInterval = millisPerToken();
+            long tokensToAdd = ((now-scheduled)/tokensInterval)+1;
+            long currentTokens = tokens.get();
+            long newTokenCount = Math.min(capacity,currentTokens+tokensToAdd);
+            tokens.set(newTokenCount);
+            long newNextRefill = scheduled + tokensToAdd*tokensInterval;
+            nextRefillTime.set(newNextRefill); 
         }finally{
             stampedLock.unlockWrite(stamp);
         }
@@ -56,7 +56,7 @@ public class TokenBucket {
     
 
     public boolean tryConsume() {
-
+        refillIfNeeded(System.currentTimeMillis());
         while(true){
         long current = tokens.get();
         if (current <= 0 ) return false;
@@ -66,11 +66,11 @@ public class TokenBucket {
     }
 
     public Decision check(){
-        boolean consumed = tryConsume();
-        if(consumed){
-            return new Decision.Allowed(tokens.get());
+        refillIfNeeded(System.currentTimeMillis());
+        while(true){
+            long current = tokens.get();
+           if(current<=0) return new Decision.Throttled(retryAfterMs());
+           if (tokens.compareAndSet(current, current-1)) return new Decision.Allowed(current-1);
         }
-        return new Decision.Throttled(retryAfterMs());
     }
-
 }
