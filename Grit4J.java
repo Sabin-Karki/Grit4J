@@ -1,14 +1,17 @@
+import java.lang.reflect.InvocationTargetException;
+
 public class Grit4J {
-    @RateLimit(capacity = 5,refillTokens = 3, perSeconds = 5)
-        public void handleRequest(String userID){
+    @RateLimit(capacity = 5, refillTokens = 2, perSeconds = 1)
+        public void handleRequest(String userID) {
             System.out.println("Handling request for user: " + userID);
         }
     
-    public static void main(String[] args) throws NoSuchMethodException,InterruptedException{
+    public static void main(String[] args) throws NoSuchMethodException, InterruptedException,
+            InvocationTargetException, IllegalAccessException {
         Grit4J service = new Grit4J();
         RateLimitEnforcer enforcer = new RateLimitEnforcer();
-        for(int i=0;i<5;i++){
-            Decision decision = enforcer.enforce(service,"user-1","handleRequest",String.class);
+        for (int i = 0; i < 5; i++) {
+            Decision decision = enforcer.enforce(service, "user-1", "handleRequest", "user-1");
             switch (decision) {
                 case Decision.Allowed a ->
                     System.out.println("Request " + i + "-> allowed || Tokens Left " + a.tokensRemaining() );
@@ -17,12 +20,12 @@ public class Grit4J {
             }
         }
 
-        Thread.sleep(5000);
+        Thread.sleep(2000);
         System.out.println("---After Refill---");
-        for(int i=0;i<5;i++){
-            Decision decision = enforcer.enforce(service,"user-1","handleRequest",String.class);
+        for (int i = 0; i < 5; i++) {
+            Decision decision = enforcer.enforce(service, "user-1", "handleRequest", "user-1");
             System.out.println("request " + i + "-> ");
-            switch(decision){
+            switch (decision) {
                 case Decision.Allowed a ->
                     System.out.println("allowed || Tokens left " + a.tokensRemaining());
                 
