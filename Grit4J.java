@@ -1,7 +1,7 @@
 import java.lang.reflect.InvocationTargetException;
 
 public class Grit4J {
-    @RateLimit(capacity = 5, refillTokens = 2, perSeconds = 1)
+    @RateLimit(capacity = 5, refillTokens = 3, perSeconds = 5)
         public void handleRequest(String userID) {
             System.out.println("Handling request for user: " + userID);
         }
@@ -20,7 +20,7 @@ public class Grit4J {
             }
         }
 
-        Thread.sleep(2000);
+        Thread.sleep(5000);
         System.out.println("---After Refill---");
         for (int i = 0; i < 5; i++) {
             Decision decision = enforcer.enforce(service, "user-1", "handleRequest", "user-1");
